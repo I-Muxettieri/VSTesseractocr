@@ -3,14 +3,28 @@ import sys
 import pytesseract
 import vapoursynth as vs
 import numpy as np
-from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QFileDialog, QVBoxLayout, QWidget, QLabel
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6 import QtWidgets, QtCore, QtGui
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QLabel, QTextEdit, QFileDialog
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+from PyQt6.QtGui import QPalette, QColor
 
 # Ottieni il percorso della directory corrente
 current_dir = os.path.dirname(os.path.realpath(__file__))
                            
 # Check if tesseract is in the PATH or define tesseract_cmd with the full path to the Tesseract executable
 pytesseract.pytesseract.tesseract_cmd = r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+
+def set_dark_theme(app):
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+    palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+    palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+    palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+    palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+    palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+    palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+    app.setPalette(palette)
 
 core = vs.core
 ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ffms2')
@@ -69,44 +83,68 @@ class ExtractSubtitlesThread(QThread):
 
         self.update_status.emit(f"Status: Subtitles extracted and saved to {srt_file_path}.")
 
-class SubtitleExtractor(QMainWindow):
+class SubtitleExtractor(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle("Subtitle Extractor")
-        main_widget = QWidget()
-        layout = QVBoxLayout(main_widget)
+        layout = QtWidgets.QVBoxLayout()
 
-        self.status_label = QLabel("Status: Ready")
-        select_video_button = QPushButton("Select Video")
-        select_video_button.clicked.connect(self.selectVideo)
-        extract_subtitle_button = QPushButton("Extract Subtitles")
+        # Status label
+        self.status_label = QtWidgets.QLabel("Status: Ready")
+
+        # File selector button
+        self.file_selector = QtWidgets.QPushButton("Seleziona file o cartella")
+        self.file_selector.setFixedSize(140, 25)
+        self.file_selector.clicked.connect(self.select_file)
+        self.file_selector.setStyleSheet("background-color: #2A2A2A; color: #FFFFFF; border: 1px solid #404040")
+        layout.addWidget(self.file_selector)
+
+        # File path display
+        self.file_path_display = QtWidgets.QTextEdit()
+        self.file_path_display.setFixedSize(430, 25)
+        self.file_path_display.setReadOnly(False)  # Set to True if you want to prevent user editing
+        self.file_path_display.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.file_path_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.file_path_display.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
+        self.file_path_display.setStyleSheet("background-color: #2A2A2A; color: #FFFFFF; border: 1px solid #404040")
+        layout.addWidget(self.file_path_display)
+
+        # Extract subtitles button
+        extract_subtitle_button = QtWidgets.QPushButton("Estrai sottotitoli")
         extract_subtitle_button.clicked.connect(self.extractSubtitles)
-
-        layout.addWidget(select_video_button)
+        extract_subtitle_button.setStyleSheet("background-color: #2A2A2A; color: #FFFFFF; border: 1px solid #404040")
         layout.addWidget(extract_subtitle_button)
+
+        # Add the status label at the bottom
         layout.addWidget(self.status_label)
 
+        # Set the layout and central widget
+        main_widget = QtWidgets.QWidget()
+        main_widget.setLayout(layout)
         self.setCentralWidget(main_widget)
 
-    def selectVideo(self):
-        video_file, _ = QFileDialog.getOpenFileName(self, "Select Video", "", "Video Files (*.mkv *.mp4 *.avi);;All Files (*)")
+    def select_file(self):
+        video_file, _ = QFileDialog.getOpenFileName(self, "Seleziona file video", "", "Video Files (*.mkv *.mp4 *.avi);;All Files (*)")
         if video_file:
+            self.file_path_display.setText(video_file)
             self.video_path = video_file
 
     def extractSubtitles(self):
-        if hasattr(self, 'video_path'):
+        # Extract subtitles when the button is clicked
+        if hasattr(self, 'video_path') and self.video_path:
             self.status_label.setText("Status: Processing...")
             self.extraction_thread = ExtractSubtitlesThread(self.video_path)
             self.extraction_thread.update_status.connect(self.status_label.setText)
             self.extraction_thread.start()
         else:
-            self.status_label.setText("Status: Please select a video first.")
+            self.status_label.setText("Status: Seleziona prima un file")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    set_dark_theme(app)
     window = SubtitleExtractor()
     window.show()
     sys.exit(app.exec())
