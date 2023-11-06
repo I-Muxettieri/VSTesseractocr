@@ -8,12 +8,9 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 # Ottieni il percorso della directory corrente
 current_dir = os.path.dirname(os.path.realpath(__file__))
-
-# Aggiungi il percorso relativo al tuo plugin
-
                            
 # Check if tesseract is in the PATH or define tesseract_cmd with the full path to the Tesseract executable
-# pytesseract.pytesseract.tesseract_cmd = 'tesseract'  # Or the full path if not in PATH
+pytesseract.pytesseract.tesseract_cmd = 'tesseract'  # Or the full path if not in PATH
 
 core = vs.core
 ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ffms2')
@@ -21,9 +18,6 @@ ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ff
 core.std.LoadPlugin(path=ffms2)
 
 def detect_subtitles(frame):
-    # Convert frame to RGB if not already in RGB format
-    if frame.format.color_family != vs.RGB:
-        frame = core.resize.Point(clip=frame, format=vs.RGB24)
     # Use numpy to handle frame data
     frame_array = np.asarray(frame[0])
     # Use Pytesseract to recognize text directly from the numpy array
@@ -50,7 +44,10 @@ class ExtractSubtitlesThread(QThread):
 
     def run(self):
         srt_file_path = os.path.splitext(self.video_path)[0] + ".srt"
+        # Carica il video e convertilo in RGB
         video = core.ffms2.Source(self.video_path)
+        if video.format.color_family != vs.RGB:
+            video = core.resize.Point(clip=video, format=vs.RGB24)
         prev_subs = None
         all_subtitles = []
 
