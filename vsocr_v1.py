@@ -10,10 +10,9 @@ from PyQt6.QtCore import QThread, pyqtSignal
 current_dir = os.path.dirname(os.path.realpath(__file__))
                            
 # Check if tesseract is in the PATH or define tesseract_cmd with the full path to the Tesseract executable
-pytesseract.pytesseract.tesseract_cmd = 'tesseract'  # Or the full path if not in PATH
+pytesseract.pytesseract.tesseract_cmd = r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
 
 core = vs.core
-ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ffms2')
 ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ffms2')
 core.std.LoadPlugin(path=ffms2)
 
