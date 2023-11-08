@@ -1,20 +1,25 @@
 import os
-import cv2
 import sys
-import pytesseract
-import vapoursynth as vs
 import numpy as np
-from PIL import Image
 from PyQt6 import QtWidgets, QtCore, QtGui
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow, QPushButton, QVBoxLayout, QLabel, QTextEdit, QFileDialog
-from PyQt6.QtCore import QThread, pyqtSignal, Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QLabel, QTextEdit, QFileDialog
+from PyQt6.QtCore import Qt,QThread, pyqtSignal
 from PyQt6.QtGui import QPalette, QColor
+from google.cloud import vision
+import vapoursynth as vs
+from PIL import Image
+import io
+
+# Configura qui il percorso al file delle credenziali, se necessario
+# os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'path/to/your/credentials.json'
 
 # Ottieni il percorso della directory corrente
 current_dir = os.path.dirname(os.path.realpath(__file__))
-                           
-# Check if tesseract is in the PATH or define tesseract_cmd with the full path to the Tesseract executable
-pytesseract.pytesseract.tesseract_cmd = r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+
+# Configurazione iniziale di VapourSynth
+core = vs.core
+ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ffms2')
+core.std.LoadPlugin(path=ffms2)
 
 def set_dark_theme(app):
     palette = QPalette()
@@ -27,10 +32,6 @@ def set_dark_theme(app):
     palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
     palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
     app.setPalette(palette)
-
-core = vs.core
-ffms2 = os.path.join(current_dir, 'vapoursynth', 'vapoursynth64', 'plugins', 'ffms2')
-core.std.LoadPlugin(path=ffms2)
 
 def preprocess_image(image, hex_color):
     # Controlla se hex_color è un colore esadecimale valido
@@ -64,17 +65,6 @@ def preprocess_image(image, hex_color):
     cv2.imwrite(f'temp/processed_frame_{new_image}.png', image)
     return new_image
 
-def detect_subtitles(frame, hex_color):
-    # Usa numpy per gestire i dati del frame
-    frame_array = np.asarray(frame[0])
-
-    # Pre-elabora l'immagine
-    processed_image = preprocess_image(frame_array, hex_color)
-
-    # Usa Pytesseract per riconoscere il testo direttamente dall'array numpy
-    subtitle_text = pytesseract.image_to_string(processed_image, lang='ita')
-    return subtitle_text
-
 def milliseconds_to_srt_time(milliseconds):
     seconds, milliseconds = divmod(milliseconds, 1000)
     minutes, seconds = divmod(seconds, 60)
@@ -86,6 +76,17 @@ def write_subtitle_to_srt(srt_file, index, start_time, end_time, subtitle_text):
     end_time_str = milliseconds_to_srt_time(end_time)
     srt_file.write(f"{index}\n{start_time_str} --> {end_time_str}\n{subtitle_text}\n\n")
 
+def detect_text_with_google_vision(image):
+    client = vision.ImageAnnotatorClient()
+    content = io.BytesIO()
+    image.save(content, format='PNG')
+    content = content.getvalue()
+    image = vision.Image(content=content)
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+    return texts[0].description if texts else ''
+
+# Thread per l'estrazione dei sottotitoli
 class ExtractSubtitlesThread(QThread):
     update_status = pyqtSignal(str)
     update_progress = pyqtSignal(int)
@@ -97,30 +98,40 @@ class ExtractSubtitlesThread(QThread):
 
     def run(self):
         srt_file_path = os.path.splitext(self.video_path)[0] + ".srt"
-        # Carica il video e convertilo in RGB
-        video = core.ffms2.Source(self.video_path)
+        video = vs.core.ffms2.Source(source=self.video_path)
         if video.format.color_family != vs.RGB:
-            video = core.resize.Point(clip=video, format=vs.RGB24)
-        prev_subs = None
-        all_subtitles = []
+            video = vs.core.resize.Point(clip=video, format=vs.RGB24)
+
+        prev_subtitle_text = ''
+        prev_end_time = -1
+        subtitle_index = 1
 
         with open(srt_file_path, "w", encoding="utf-8") as srt_file:
-            frame_num = video.num_frames
-
-            for n in range(frame_num):
-                 # Aggiorna la barra di avanzamento
+            for n in range(video.num_frames):
                 frame = video.get_frame(n)
+                frame_array = np.array(frame[0].resize.Point(format=vs.GRAY8, matrix_in_s='709', matrix_s='170m'))
+                image = Image.fromarray(frame_array)
+                subtitle_text = detect_text_with_google_vision(image)
+
                 frame_time = int(frame.props['_DurationNum'] * 1000 / frame.props['_DurationDen'])
-                subtitle_text = detect_subtitles(frame, self.hex_color)
                 start_time = n * frame_time
                 end_time = start_time + frame_time
 
-                # Check if the subtitle is the same as the previous one to avoid duplicates
-                if subtitle_text and (not prev_subs or subtitle_text != prev_subs[2]):
-                    write_subtitle_to_srt(srt_file, len(all_subtitles) + 1, start_time, end_time, subtitle_text)
-                    all_subtitles.append((start_time, end_time, subtitle_text))
+                if subtitle_text == prev_subtitle_text:
+                    prev_end_time = end_time
+                else:
+                    if prev_subtitle_text:
+                        write_subtitle_to_srt(srt_file, subtitle_index, start_time, prev_end_time, prev_subtitle_text)
+                        subtitle_index += 1
+                    prev_subtitle_text = subtitle_text
+                    prev_end_time = end_time
 
-                prev_subs = (start_time, end_time, subtitle_text) if subtitle_text else prev_subs
+                # Update the progress via signal
+                self.update_progress.emit(n / video.num_frames * 100)
+
+            # Ensure the last subtitle is written out
+            if prev_subtitle_text:
+                write_subtitle_to_srt(srt_file, subtitle_index, start_time, prev_end_time, prev_subtitle_text)
 
         self.update_status.emit(f"Status: Subtitles extracted and saved to {srt_file_path}.")
 
