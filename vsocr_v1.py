@@ -14,7 +14,7 @@ from PyQt6.QtGui import QPalette, QColor
 current_dir = os.path.dirname(os.path.realpath(__file__))
                            
 # Check if tesseract is in the PATH or define tesseract_cmd with the full path to the Tesseract executable
-pytesseract.pytesseract.tesseract_cmd = r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+pytesseract.pytesseract.tesseract_cmd = r'C:\\Users\\ryzen\\AppData\\Local\\Programs\\Tesseract-OCR\\tesseract.exe'
 
 def set_dark_theme(app):
     palette = QPalette()
